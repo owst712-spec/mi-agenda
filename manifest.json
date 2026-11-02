@@ -1,0 +1,27 @@
+{
+  "name": "Mi Agenda",
+  "short_name": "Agenda",
+  "description": "Escribe o dicta y tu agenda se organiza sola en Google Calendar.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f6fa",
+  "theme_color": "#2563eb",
+  "lang": "es",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "shortcuts": [
+    { "name": "Dictar", "short_name": "Dictar", "url": "./?voz=1", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Escribir nota", "short_name": "Nota", "url": "./?nota=1", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
+  ],
+  "share_target": {
+    "action": "./",
+    "method": "GET",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  }
+}
