@@ -144,6 +144,7 @@ nav.bottom{display:none}
   <div class="brand"><img src="icon.svg" alt="">Mi Agenda</div>
   <span class="sync" id="sync"></span>
   <div class="tabs" id="tabsTop"><button data-tab="hoy">Hoy</button><button data-tab="cal">Calendario</button><button data-tab="hab">Hábitos</button></div>
+  <button class="ib" id="pipBtn" aria-label="Ventana flotante" title="Ventana flotante (siempre encima)" hidden>📌</button>
   <button class="ib" id="cfgBtn" aria-label="Ajustes">⚙</button>
 </header>
 <div class="wrap" id="app"></div>
@@ -174,6 +175,9 @@ nav.bottom{display:none}
   <h3>Ajustes</h3>
   <div><span class="lbl">Dirección del backend (Apps Script)</span><input id="cU" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></div>
   <div><span class="lbl">Clave de la app</span><input id="cK" type="password" autocomplete="off"></div>
+  <div><span class="lbl">Inteligencia artificial: <b id="cIaEst">—</b></span>
+    <input id="cIa" type="password" placeholder="Pega aquí tu clave gratis de Gemini" autocomplete="off">
+    <span class="lbl"><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Conseguir clave gratis →</a> (botón “Create API key”, cópiala y pégala aquí)</span></div>
   <div><span class="lbl">Tema</span><select id="cTh"><option value="">Automático</option><option value="light">Claro</option><option value="dark">Oscuro</option></select></div>
   <div class="acts">
     <button type="button" class="btn ghost" id="cInst" hidden>Instalar app</button>
@@ -290,7 +294,10 @@ function hablar(){
   if (rec){ rec.stop(); return; }
   rec = new SR(); rec.lang = 'es-PE'; rec.interimResults = true; rec.continuous = false;
   let final = '';
-  rec.onresult = e => { final = Array.from(e.results).map(r => r[0].transcript).join(' '); const q = $('#q'); if (q) q.value = final; };
+  rec.onresult = e => {
+    final = Array.from(e.results).map(r => r[0].transcript).join(' ');
+    [document, PIP && PIP.document].forEach(d => { const q = d && d.getElementById('q'); if (q) q.value = final; });
+  };
   rec.onend = () => { rec = null; render(); if (final.trim()) enviar(final); };
   rec.onerror = e => { rec = null; render(); if (e.error !== 'no-speech' && e.error !== 'aborted') toast('Micrófono: ' + e.error); };
   rec.start(); render();
@@ -302,6 +309,7 @@ function render(){
   if (!S.cfg.theme) delete document.documentElement.dataset.theme;
   document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab));
   if (!S.cfg.url){ $('#app').innerHTML = setupHTML(); return; }
+  renderPip();
   const foco = document.activeElement && document.activeElement.id === 'q', val = $('#q') ? $('#q').value : '';
   $('#app').innerHTML = S.tab === 'hoy' ? hoyHTML() : S.tab === 'cal' ? calHTML() : habHTML();
   const q = $('#q');
@@ -325,7 +333,9 @@ function askHTML(){
       : `<div class="bubble">${esc(l.resp)}${(l.cambios || []).some(x => x.tipo === 'evento' || x.tipo === 'tarea') ? '<div class="acts"><button data-act="undo">↶ Deshacer</button></div>' : ''}</div>`;
   }
   if (S.cola.length) b += `<div class="hint">📤 ${S.cola.length} mensaje(s) esperando internet</div>`;
-  return `<div class="card"><h2>Dime qué hacer</h2>
+  const ia = S.data && S.data.ia;
+  const iaTag = ia === 'ninguna' ? '<button class="r chip" data-act="cfg">Modo simple · activar IA</button>' : ia ? '<span class="r">🤖 IA activa</span>' : '';
+  return `<div class="card"><h2>Dime qué hacer ${iaTag}</h2>
     <div class="ask"><textarea id="q" rows="1" placeholder="Ej: “Examen de Análisis el jueves 8am, importante”" ${S.busy ? 'disabled' : ''}></textarea>
     <button class="mic${rec ? ' rec' : ''}" data-act="mic" aria-label="Hablar">🎤</button><button class="send" data-act="send" aria-label="Enviar">➤</button></div>
     ${!l ? `<div class="chips">${['Gimnasio mañana 7am','Pagar la luz el 15, importante','¿Qué tengo esta semana?','Hice 30 min de correr','Todos los lunes y miércoles 8-10 clase de Pavimentos'].map(x => `<button class="chip" data-say="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}
@@ -417,6 +427,51 @@ function habHTML(){
   </div></div>`;
 }
 
+// ---------- ventana flotante (laptop: siempre encima de las demás ventanas) ----------
+let PIP = null;
+async function abrirFlotante(){
+  if (PIP){ PIP.focus(); return; }
+  try{
+    PIP = await documentPictureInPicture.requestWindow({ width:380, height:540 });
+  }catch(e){ toast('No se pudo abrir la ventana flotante'); return; }
+  const d = PIP.document;
+  d.title = 'Mi Agenda';
+  const st = d.createElement('style');
+  st.textContent = Array.from(document.styleSheets).map(s => { try{ return Array.from(s.cssRules).map(r => r.cssText).join('\n'); }catch{ return ''; } }).join('\n')
+    + '.wrap{padding:10px}.card{margin-bottom:10px}';
+  d.head.appendChild(st);
+  if (document.documentElement.dataset.theme) d.documentElement.dataset.theme = document.documentElement.dataset.theme;
+  d.addEventListener('click', e => {
+    const t = e.target.closest('[data-act],[data-say],[data-ev]'); if (!t) return;
+    const ds = t.dataset;
+    if (ds.act === 'send'){ const q = d.getElementById('q'); const v = q.value; q.value = ''; enviar(v); }
+    else if (ds.act === 'mic') hablar();
+    else if (ds.act === 'undo') deshacer();
+    else if (ds.act === 'cfg'){ window.focus(); openCfg(); }
+    else if (ds.say) enviar(ds.say);
+    else if (ds.ev){ window.focus(); openEv(ds.ev); }
+  });
+  PIP.addEventListener('pagehide', () => { PIP = null; });
+  renderPip();
+}
+function renderPip(){
+  if (!PIP) return;
+  const d = PIP.document, old = d.getElementById('q');
+  const val = old ? old.value : '', foco = old && d.activeElement === old;
+  const now = new Date();
+  const hoy = onDay(now, evs()).filter(e => e.e > now).sort((a,b) => (b.imp - a.imp) || (a.s - b.s));
+  const man = onDay(addDays(now,1), evs());
+  d.body.innerHTML = `<div class="wrap">${askHTML()}
+    <div class="card"><h2>Hoy</h2>${hoy.length ? hoy.map(e => evRow(e)).join('') : '<div class="empty">Nada más por hoy.</div>'}</div>
+    <div class="card"><h2>Mañana</h2>${man.length ? man.map(e => evRow(e)).join('') : '<div class="empty">Libre.</div>'}</div></div>`;
+  const q = d.getElementById('q');
+  if (q){
+    q.value = S.busy ? '' : val; if (foco) q.focus();
+    q.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); const t = q.value; q.value = ''; enviar(t); } });
+  }
+}
+if ('documentPictureInPicture' in window){ $('#pipBtn').hidden = false; $('#pipBtn').onclick = abrirFlotante; }
+
 // ---------- edición manual (opcional) ----------
 let editing = null;
 function openEv(id){
@@ -445,10 +500,24 @@ $('#fDel').onclick = async () => {
 $('#fX').onclick = () => $('#evDlg').close();
 
 // ---------- ajustes ----------
-function openCfg(){ $('#cU').value = S.cfg.url; $('#cK').value = S.cfg.secret; $('#cTh').value = S.cfg.theme || ''; $('#cfgDlg').showModal(); }
+const IA_TXT = { gemini:'activa (Gemini gratis) ✓', claude:'activa (Claude) ✓', ninguna:'modo simple, sin IA' };
+function openCfg(){
+  $('#cU').value = S.cfg.url; $('#cK').value = S.cfg.secret; $('#cTh').value = S.cfg.theme || ''; $('#cIa').value = '';
+  $('#cIaEst').textContent = IA_TXT[S.data && S.data.ia] || '—';
+  $('#cfgDlg').showModal();
+}
 $('#cfgBtn').onclick = openCfg;
 $('#cX').onclick = () => $('#cfgDlg').close();
-$('#cOk').onclick = () => { S.cfg = { url:$('#cU').value.trim(), secret:$('#cK').value.trim(), theme:$('#cTh').value }; store.set('ma.cfg', S.cfg); $('#cfgDlg').close(); render(); refrescar(); };
+$('#cOk').onclick = async () => {
+  S.cfg = { url:$('#cU').value.trim(), secret:$('#cK').value.trim(), theme:$('#cTh').value }; store.set('ma.cfg', S.cfg);
+  const clave = $('#cIa').value.trim();
+  $('#cfgDlg').close(); render();
+  if (clave){
+    try{ const r = await api('clave_ia', { proveedor:'gemini', clave }); if (S.data) S.data.ia = r.ia; toast('IA activada 🤖 Ya puedes escribir natural'); }
+    catch(e){ toast(e.message); }
+  }
+  refrescar();
+};
 $('#cDisp').onclick = () => { if (S.cfg.url) window.open(S.cfg.url + '?disponible', '_blank'); };
 let instEv = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); instEv = e; $('#cInst').hidden = false; });
@@ -463,6 +532,7 @@ document.addEventListener('click', async e => {
   else if (ds.act === 'send'){ const q = $('#q'); const v = q.value; q.value = ''; enviar(v); }
   else if (ds.act === 'mic') hablar();
   else if (ds.act === 'undo') deshacer();
+  else if (ds.act === 'cfg') openCfg();
   else if (ds.say){ enviar(ds.say); }
   else if (ds.ev) openEv(ds.ev);
   else if (ds.task){
