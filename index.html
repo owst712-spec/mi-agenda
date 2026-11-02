@@ -173,11 +173,13 @@ nav.bottom{display:none}
 
 <dialog id="cfgDlg"><form method="dialog">
   <h3>Ajustes</h3>
-  <div><span class="lbl">Dirección del backend (Apps Script)</span><input id="cU" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></div>
-  <div><span class="lbl">Clave de la app</span><input id="cK" type="password" autocomplete="off"></div>
   <div><span class="lbl">Inteligencia artificial: <b id="cIaEst">—</b></span>
     <input id="cIa" type="password" placeholder="Pega aquí tu clave gratis de Gemini" autocomplete="off">
     <span class="lbl"><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Conseguir clave gratis →</a> (botón “Create API key”, cópiala y pégala aquí)</span></div>
+  <details><summary class="lbl">Avanzado: conexión (no tocar; la configura el correo de activación)</summary>
+    <div><span class="lbl">Dirección del backend (Apps Script)</span><input id="cU" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></div>
+    <div><span class="lbl">Clave de la app</span><input id="cK" type="password" autocomplete="off"></div>
+  </details>
   <div><span class="lbl">Tema</span><select id="cTh"><option value="">Automático</option><option value="light">Claro</option><option value="dark">Oscuro</option></select></div>
   <div class="acts">
     <button type="button" class="btn ghost" id="cInst" hidden>Instalar app</button>
@@ -240,6 +242,7 @@ async function api(accion, extra = {}){
   if (!S.cfg.url) throw new Error('Falta configurar la app (⚙)');
   const r = await fetch(S.cfg.url, { method:'POST', body: JSON.stringify({ secret:S.cfg.secret, accion, ...extra }) });
   const j = await r.json();
+  if (j.error === 'Clave incorrecta') throw new Error('Este dispositivo perdió la conexión: vuelve a tocar el botón del correo “Activa Mi Agenda”');
   if (!j.ok) throw new Error(j.error || 'Error del servidor');
   return j;
 }
@@ -508,12 +511,14 @@ function openCfg(){
 }
 $('#cfgBtn').onclick = openCfg;
 $('#cX').onclick = () => $('#cfgDlg').close();
+const esClaveIA = v => /^(AIza|AQ\.|sk-ant-)/.test(v);   // claves de Gemini o Anthropic, no la de la app
 $('#cOk').onclick = async () => {
-  S.cfg = { url:$('#cU').value.trim(), secret:$('#cK').value.trim(), theme:$('#cTh').value }; store.set('ma.cfg', S.cfg);
-  const clave = $('#cIa').value.trim();
+  let secret = $('#cK').value.trim(), clave = $('#cIa').value.trim();
+  if (esClaveIA(secret)){ if (!clave) clave = secret; secret = S.cfg.secret; }   // pegada en el campo equivocado
+  S.cfg = { url:$('#cU').value.trim(), secret, theme:$('#cTh').value }; store.set('ma.cfg', S.cfg);
   $('#cfgDlg').close(); render();
   if (clave){
-    try{ const r = await api('clave_ia', { proveedor:'gemini', clave }); if (S.data) S.data.ia = r.ia; toast('IA activada 🤖 Ya puedes escribir natural'); }
+    try{ const r = await api('clave_ia', { proveedor: clave.startsWith('sk-ant-') ? 'claude' : 'gemini', clave }); if (S.data) S.data.ia = r.ia; toast('IA activada 🤖 Ya puedes escribir natural'); }
     catch(e){ toast(e.message); }
   }
   refrescar();
